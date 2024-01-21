@@ -123,6 +123,7 @@ class SampledTrack:
     artist: ArtistRef
     features: List[ArtistRef]
     year: int
+    more_link: str
 
 
 def parse_track_artists(cell: HtmlElement) -> Tuple[ArtistRef, List[ArtistRef]]:
@@ -144,14 +145,17 @@ def scrape_track_page(sess: requests.Session, url: str) -> List[SampledTrack]:
     for row in doc.cssselect("table.tdata > tbody > tr"):
         cells = sel_td(row)
         assert len(cells) == 5, f"Expected 5 cells in row, got {len(cells)}"
-        art_cell, song_cell, artist_cell, year_cell, _sample_cell = cells
-        art = parse_art(url, art_cell)
-        song = take_text([song_cell])
-        artist, features = parse_track_artists(artist_cell)
-        year = int(take_text([year_cell]))
-        samples.append(
-            SampledTrack(
-                art=art, song=song, artist=artist, features=features, year=year
-            )
+        art_cell, song_cell, artists_cell, year_cell, _sample_cell = cells
+        artist, features = parse_track_artists(artists_cell)
+        track = SampledTrack(
+            art=parse_art(url, art_cell),
+            song=take_text([song_cell]),
+            artist=artist,
+            features=features,
+            year=int(take_text([year_cell])),
+            more_link=extract_url(
+                url, assert_one(song_cell.xpath("descendant-or-self::a"))
+            ),
         )
+        samples.append(track)
     return samples
