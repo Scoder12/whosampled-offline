@@ -104,7 +104,6 @@ def scrape_artist_page(
     url, doc = fetch_document(sess, WS_DOMAIN + "/" + ws_id)
     artist = parse_artist(ws_id, doc)
     tracks = parse_tracks(url, doc)
-    return artist, tracks
 
     sel_next_page = CSSSelector(".pagination .next a")
     while True:
