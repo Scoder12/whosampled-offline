@@ -186,7 +186,6 @@ def scrape_track_page_samples(
     year_re = re.compile(r"\((\d+)\)\s*$")
     for sample_elt in find_samples_table(doc):
         artist_elt = assert_one(sel_track_artist(sample_elt))
-        print(lxml.html.tostring(artist_elt))
         artist, features = parse_track_artists(artist_elt)
         track_name = assert_one(sel_track_name(sample_elt))
         year_text = take_text([artist_elt])
