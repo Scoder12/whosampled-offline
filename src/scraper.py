@@ -144,7 +144,7 @@ def parse_track_artists(cell: HtmlElement) -> Tuple[ArtistRef, List[ArtistRef]]:
     return artists[0], artists[1:]
 
 
-def scrape_dedi_samples_page(url: str, doc: HtmlElement) -> List[SampledTrack]:
+def scrape_dedi_samples_page(sess: requests.Session, url: str, doc: HtmlElement) -> List[SampledTrack]:
     url, doc = fetch_document(sess, url)
     samples = []
     sel_td = CSSSelector("td")
@@ -209,4 +209,4 @@ def scrape_samples(sess: requests.Session, more_link: str) -> List[SampledTrack]
     if r.status_code == 404:
         return scrape_track_page_samples(sess, more_link)
     r.raise_for_status()
-    return scrape_dedi_samples_page(r.url, lxml.html.fromstring(r.text))
+    return scrape_dedi_samples_page(sess, r.url, lxml.html.fromstring(r.text))
