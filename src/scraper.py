@@ -135,7 +135,7 @@ class SampledTrack:
 def parse_track_artists(cell: HtmlElement) -> Tuple[ArtistRef, List[ArtistRef]]:
     links = cell.xpath("descendant-or-self::a")
     assert len(links) >= 1, "Expected at least one artist link but got 0"
-    ws_id_re = re.compile(r"\/([A-Za-z0-9\-()]+)\/")
+    ws_id_re = re.compile(r"\/(?:tv\/)?([A-Za-z0-9\-()\.]+)\/")
     artists = []
     for l in links:
         ws_id_m = ws_id_re.fullmatch(l.get("href"))
