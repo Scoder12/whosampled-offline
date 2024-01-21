@@ -86,7 +86,9 @@ def parse_tracks(url: str, root: HtmlElement) -> List[PartialTrack]:
         year_text = take_text(sel_year(track_tree))
         year = year_re.fullmatch(year_text).group(1)
         more_link = extract_url(url, assert_one(sel_more_link(track_tree)))
-        tracks.append(PartialTrack(art=art_ref, name=name, year=int(year), more_link=more_link))
+        tracks.append(
+            PartialTrack(art=art_ref, name=name, year=int(year), more_link=more_link)
+        )
     return tracks
 
 
@@ -148,6 +150,8 @@ def scrape_track_page(sess: requests.Session, url: str) -> List[SampledTrack]:
         artist, features = parse_track_artists(artist_cell)
         year = int(take_text([year_cell]))
         samples.append(
-            SampledTrack(art=art, song=song, artist=artist, features=features, year=year)
+            SampledTrack(
+                art=art, song=song, artist=artist, features=features, year=year
+            )
         )
     return samples
