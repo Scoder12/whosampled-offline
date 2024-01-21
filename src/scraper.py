@@ -36,6 +36,11 @@ def extract_url(current_url: str, e: HtmlElement) -> str:
 
 
 @dataclass
+class ArtRef:
+    sources: List[Tuple[str, str]]
+
+
+@dataclass
 class PartialArtist:
     ws_artist_id: str
     name: str
@@ -43,9 +48,24 @@ class PartialArtist:
 
 @dataclass
 class PartialTrack:
+    art: ArtRef
     name: str
     year: int
     more_link: str
+
+
+def parse_art(url: str, cell: HtmlElement) -> ArtRef:
+    img_elt = assert_one(cell.xpath("descendant-or-self::img"))
+    images = {"1.0": urljoin(url, img_elt.get("src"))}
+    pair_re = re.compile(r"(\S+) (\d+)x")
+    for pair in img_elt.get("srcset").split(", "):
+        pair_m = pair_re.fullmatch(pair)
+        assert pair_m is not None, f"Expected {pair!r} to match regex"
+        img_rel_url, res_num = pair_m.group(1), pair_m.group(2)
+        img_url = urljoin(url, img_rel_url)
+        res_num = round(float(res_num), ndigits=1)
+        images[f"{res_num:.1f}"] = img_url
+    return ArtRef(sources=list(images.items()))
 
 
 def parse_artist(ws_artist_id: str, root: HtmlElement) -> PartialArtist:
@@ -55,16 +75,18 @@ def parse_artist(ws_artist_id: str, root: HtmlElement) -> PartialArtist:
 
 def parse_tracks(url: str, root: HtmlElement) -> List[PartialTrack]:
     tracks = []
-    sel_more_link = CSSSelector(".trackName a[itemprop=url]")
+    sel_art = CSSSelector(".trackCover")
     sel_name = CSSSelector(".trackName span[itemprop=name]")
     sel_year = CSSSelector(".trackName .trackYear")
+    sel_more_link = CSSSelector(".trackName a[itemprop=url]")
     year_re = re.compile(r"\((\d+)\)")
     for track_tree in root.cssselect(".trackList .trackItem"):
+        art_ref = parse_art(url, assert_one(sel_art(track_tree)))
         name = take_text(sel_name(track_tree))
         year_text = take_text(sel_year(track_tree))
         year = year_re.fullmatch(year_text).group(1)
         more_link = extract_url(url, assert_one(sel_more_link(track_tree)))
-        tracks.append(PartialTrack(name=name, year=int(year), more_link=more_link))
+        tracks.append(PartialTrack(art=art_ref, name=name, year=int(year), more_link=more_link))
     return tracks
 
 
@@ -84,11 +106,6 @@ def scrape_artist_page(
         url, doc = fetch_document(sess, next_url)
         tracks += parse_tracks(url, doc)
     return artist, tracks
-
-
-@dataclass
-class ArtRef:
-    sources: List[Tuple[str, str]]
 
 
 @dataclass
@@ -116,21 +133,6 @@ def parse_track_artists(cell: HtmlElement) -> Tuple[ArtistRef, List[ArtistRef]]:
         assert ws_id_m is not None, f"Expected re to match: {l.get('href')!r}"
         artists.append(ArtistRef(name=take_text([l]), ws_id=ws_id_m.group(1)))
     return artists[0], artists[1:]
-
-
-def parse_art(url: str, cell: HtmlElement) -> ArtRef:
-    img_elt = assert_one(cell.xpath("descendant-or-self::img"))
-    images = {"1.0": urljoin(url, img_elt.get("src"))}
-    pair_re = re.compile(r"(\S+) (\d+)x")
-    for pair in img_elt.get("srcset").split(", "):
-        pair_m = pair_re.fullmatch(pair)
-        assert pair_m is not None, f"Expected {pair!r} to match regex"
-        img_rel_url, res_num = pair_m.group(1), pair_m.group(2)
-        img_url = urljoin(url, img_rel_url)
-        res_num = round(float(res_num), ndigits=1)
-        images[f"{res_num:.1f}"] = img_url
-    return ArtRef(sources=list(images.items()))
-
 
 
 def scrape_track_page(sess: requests.Session, url: str) -> List[SampledTrack]:
