@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any, List, Tuple
 import re
+from urllib.parse import urljoin
 
 import requests
 import lxml.html
@@ -12,7 +13,7 @@ WS_DOMAIN = "https://www.whosampled.com"
 UA = "WhoSampledOffline/v1.0 +https://github.com/Scoder12/whosampled-offline"
 
 
-def fetch_document(sess: requests.Session, url: str) -> (str, HtmlElement):
+def fetch_document(sess: requests.Session, url: str) -> Tuple[str, HtmlElement]:
     print("Fetching", url)
     r = sess.get(url, headers={"User-Agent": UA})
     r.raise_for_status()
@@ -69,7 +70,7 @@ def parse_tracks(url: str, root: HtmlElement) -> List[PartialTrack]:
 
 def scrape_artist_page(
     sess: requests.Session, ws_artist_id: str
-) -> (PartialArtist, List[PartialTrack]):
+) -> Tuple[PartialArtist, List[PartialTrack]]:
     url, doc = fetch_document(sess, WS_DOMAIN + "/" + ws_artist_id)
     artist = parse_artist(ws_artist_id, doc)
     tracks = parse_tracks(url, doc)
@@ -85,11 +86,83 @@ def scrape_artist_page(
     return artist, tracks
 
 
+@dataclass
+class ArtRef:
+    sources: List[Tuple[str, str]]
+
+
+@dataclass
+class ArtistRef:
+    name: str
+    ws_id: str
+
+
+@dataclass
+class SampledTrack:
+    art: ArtRef
+    song: str
+    artist: ArtistRef
+    features: List[ArtistRef]
+    year: int
+
+
+def parse_track_artists(cell: HtmlElement) -> Tuple[ArtistRef, List[ArtistRef]]:
+    links = cell.xpath("descendant-or-self::a")
+    assert len(links) >= 1, "Expected at least one artist link but got 0"
+    ws_id_re = re.compile(r"\/([A-Za-z0-9\-()]+)\/")
+    artists = []
+    for l in links:
+        ws_id_m = ws_id_re.fullmatch(l.get("href"))
+        assert ws_id_m is not None, f"Expected re to match: {l.get('href')!r}"
+        artists.append(ArtistRef(name=take_text([l]), ws_id=ws_id_m.group(1)))
+    return artists[0], artists[1:]
+
+
+def parse_art(url: str, cell: HtmlElement) -> ArtRef:
+    img_elt = assert_one(cell.xpath("descendant-or-self::img"))
+    images = {"1.0": urljoin(url, img_elt.get("src"))}
+    pair_re = re.compile(r"(\S+) (\d+)x")
+    for pair in img_elt.get("srcset").split(", "):
+        pair_m = pair_re.fullmatch(pair)
+        assert pair_m is not None, f"Expected {pair!r} to match regex"
+        img_rel_url, res_num = pair_m.group(1), pair_m.group(2)
+        img_url = urljoin(url, img_rel_url)
+        res_num = round(float(res_num), ndigits=1)
+        images[f"{res_num:.1f}"] = img_url
+    return ArtRef(sources=list(images.items()))
+
+
+
+def scrape_track_page(sess: requests.Session, url: str) -> List[SampledTrack]:
+    url, doc = fetch_document(sess, url)
+    samples = []
+    sel_td = CSSSelector("td")
+    for row in doc.cssselect("table.tdata > tbody > tr"):
+        cells = sel_td(row)
+        assert len(cells) == 5, f"Expected 5 cells in row, got {len(cells)}"
+        art_cell, song_cell, artist_cell, year_cell, _sample_cell = cells
+        art = parse_art(url, art_cell)
+        song = take_text([song_cell])
+        artist, features = parse_track_artists(artist_cell)
+        year = int(take_text([year_cell]))
+        samples.append(
+            SampledTrack(art=art, song=song, artist=artist, features=features, year=year)
+        )
+    return samples
+
+
 def main():
     sess = requests.Session()
-    artist, tracks = scrape_artist_page(sess, "Leroy")
-    print(artist)
-    print(tracks)
+    # artist, tracks = scrape_artist_page(sess, "Leroy", limit=1)
+    # print(artist)
+    # print(tracks)
+    track = PartialTrack(
+        name="The Joke Is on You",
+        year=2022,
+        more_link="https://www.whosampled.com/Leroy/Her-Head-Is-So0o0o0o0-Rolling-(POST-MORTEM-MIX)/",
+    )
+    samples = scrape_track_page(sess, track.more_link.rstrip("/") + "/samples")
+    print(samples)
 
 
 if __name__ == "__main__":
