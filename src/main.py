@@ -20,7 +20,7 @@ def fetch_document(sess: requests.Session, url: str) -> (str, HtmlElement):
 
 
 def assert_one(l: List[Any]) -> Any:
-    assert len(l) == 1, f"Expected a single item, got {len(l)}: {l!r}"
+    assert len(l) == 1, f"Expected a single item, got {len(l)}"
     return l[0]
 
 
