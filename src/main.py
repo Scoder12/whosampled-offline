@@ -29,7 +29,8 @@ def setup_db(db):
             artist_id INTEGER,
             year INTEGER,
             link TEXT UNIQUE,
-            FOREIGN KEY(artist_id) REFERENCES artists(id)
+            FOREIGN KEY(artist_id) REFERENCES artists(id),
+            UNIQUE (name, artist_id, year)
         )
             """
         )
@@ -40,7 +41,8 @@ def setup_db(db):
             track_id INTEGER,
             artist_id INTEGER,
             FOREIGN KEY(track_id) REFERENCES tracks(id),
-            FOREIGN KEY(artist_id) REFERENCES artists(id)
+            FOREIGN KEY(artist_id) REFERENCES artists(id),
+            UNIQUE (track_id, artist_id)
         )
             """
         )
@@ -51,7 +53,8 @@ def setup_db(db):
             track_id INTEGER,
             res_multiplier REAL,
             url TEXT,
-            FOREIGN KEY(track_id) REFERENCES tracks(id)
+            FOREIGN KEY(track_id) REFERENCES tracks(id),
+            UNIQUE (track_id, res_multiplier)
         )
             """
         )
@@ -61,6 +64,9 @@ def setup_db(db):
             id INTEGER PRIMARY KEY,
             track_id INTEGER,
             sampled_track_id INTEGER,
+            FOREIGN KEY(track_id) REFERENCES tracks(id),
+            FOREIGN KEY(sampled_track_id) REFERENCES tracks(id),
+            UNIQUE (track_id, sampled_track_id)
         )
             """
         )
@@ -87,25 +93,68 @@ def main():
     for track in tracks:
         (track_id,) = db.execute(
             "INSERT INTO tracks (name, artist_id, year, link) VALUES (?, ?, ?, ?) RETURNING id",
-            (track.name, artist_id, track.year, track.more_link)
+            (track.name, artist_id, track.year, track.more_link),
         ).fetchone()
         db.executemany(
             "INSERT INTO art (track_id, res_multiplier, url) VALUES (?, ?, ?)",
-            [(track_id, float(res_multiplier), img_url) for res_multiplier, img_url in track.art.sources]
+            [
+                (track_id, float(res_multiplier), img_url)
+                for res_multiplier, img_url in track.art.sources
+            ],
         )
 
-        for sample in scrape_track_page(track.more_link.rstrip("/") + "/samples"):
-            (sampled_artist_id,) = db.execute(
-                "INSERT INTO artists (ws_id, name) VALUES (?, ?) RETURNING id",
-                (sample.artist.ws_id, sample.artist.name)
+        samples = scrape_track_page(sess, track.more_link.rstrip("/") + "/samples")
+        for sample in samples:
+            (sampled_artist_id,) = (
+                db.execute(
+                    "INSERT OR IGNORE INTO artists (ws_id, name) VALUES (?, ?) RETURNING id",
+                    (sample.artist.ws_id, sample.artist.name),
+                ).fetchone()
+                or db.execute(
+                    "SELECT id FROM artists WHERE ws_id = ? AND name = ?",
+                    (sample.artist.ws_id, sample.artist.name),
+                ).fetchone()
+            )
+            r = db.execute(
+                "INSERT OR IGNORE INTO tracks (name, artist_id, year, link) VALUES (?, ?, ?, ?) RETURNING id",
+                (sample.song, sampled_artist_id, sample.year, sample.more_link),
             ).fetchone()
-            (sampled_track_id,) = db.execute(
-                "INSERT INTO tracks (name, artist_id, year, link) VALUES (?, ?, ?, ?) RETURNING id",
-                (sample.song, sampled_artist_id, sample.year, track.more_link)
-            ).fetchone()
-
-
-    print(artist_id)
+            if r is not None:
+                # the sampled track does not yet exist. populate it.
+                (sampled_track_id,) = r
+                for feature in sample.features:
+                    (feature_id,) = (
+                        db.execute(
+                            "INSERT OR IGNORE INTO artists (ws_id, name) VALUES (?, ?) RETURNING id",
+                            (feature.ws_id, feature.name),
+                        ).fetchone()
+                        or db.execute(
+                            "SELECT id FROM artists WHERE ws_id = ? AND name = ?",
+                            (feature.ws_id, feature.name),
+                        ).fetchone()
+                    )
+                    db.execute(
+                        "INSERT INTO features(track_id, artist_id) VALUES (?, ?)",
+                        (sampled_track_id, feature_id),
+                    )
+                db.executemany(
+                    "INSERT INTO art (track_id, res_multiplier, url) VALUES (?, ?, ?)",
+                    [
+                        (sampled_track_id, float(res_multiplier), img_url)
+                        for res_multiplier, img_url in sample.art.sources
+                    ],
+                )
+            else:
+                # use the existing sampled track from the DB
+                (sampled_track_id,) = db.execute(
+                    "SELECT id FROM tracks WHERE name = ? AND artist_id = ? AND year = ?",
+                    (sample.song, sampled_artist_id, sample.year),
+                ).fetchone()
+            db.execute(
+                "INSERT INTO samples(track_id, sampled_track_id) VALUES (?, ?)",
+                (track_id, sampled_track_id),
+            )
+    db.commit()
 
 
 if __name__ == "__main__":
