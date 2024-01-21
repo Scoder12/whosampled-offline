@@ -42,7 +42,7 @@ class ArtRef:
 
 @dataclass
 class PartialArtist:
-    ws_artist_id: str
+    ws_id: str
     name: str
 
 
@@ -68,9 +68,9 @@ def parse_art(url: str, cell: HtmlElement) -> ArtRef:
     return ArtRef(sources=list(images.items()))
 
 
-def parse_artist(ws_artist_id: str, root: HtmlElement) -> PartialArtist:
+def parse_artist(ws_id: str, root: HtmlElement) -> PartialArtist:
     artist_name = take_text(root.cssselect(".artistName"))
-    return PartialArtist(ws_artist_id=ws_artist_id, name=artist_name)
+    return PartialArtist(ws_id=ws_id, name=artist_name)
 
 
 def parse_tracks(url: str, root: HtmlElement) -> List[PartialTrack]:
@@ -93,10 +93,10 @@ def parse_tracks(url: str, root: HtmlElement) -> List[PartialTrack]:
 
 
 def scrape_artist_page(
-    sess: requests.Session, ws_artist_id: str
+    sess: requests.Session, ws_id: str
 ) -> Tuple[PartialArtist, List[PartialTrack]]:
-    url, doc = fetch_document(sess, WS_DOMAIN + "/" + ws_artist_id)
-    artist = parse_artist(ws_artist_id, doc)
+    url, doc = fetch_document(sess, WS_DOMAIN + "/" + ws_id)
+    artist = parse_artist(ws_id, doc)
     tracks = parse_tracks(url, doc)
 
     sel_next_page = CSSSelector(".pagination .next a")
