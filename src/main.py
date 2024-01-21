@@ -67,7 +67,9 @@ def parse_tracks(url: str, root: HtmlElement) -> List[PartialTrack]:
     return tracks
 
 
-def scrape_artist_page(sess: requests.Session, ws_artist_id: str) -> (PartialArtist, List[PartialTrack]):
+def scrape_artist_page(
+    sess: requests.Session, ws_artist_id: str
+) -> (PartialArtist, List[PartialTrack]):
     url, doc = fetch_document(sess, WS_DOMAIN + "/" + ws_artist_id)
     artist = parse_artist(ws_artist_id, doc)
     tracks = parse_tracks(url, doc)
