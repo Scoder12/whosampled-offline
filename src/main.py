@@ -4,7 +4,7 @@ import sqlite3
 import requests
 
 import scraper
-from scraper import scrape_artist_page, scrape_track_page
+from scraper import scrape_artist_page, scrape_samples
 
 
 def setup_db(db):
@@ -103,7 +103,7 @@ def main():
             ],
         )
 
-        samples = scrape_track_page(sess, track.more_link.rstrip("/") + "/samples")
+        samples = scrape_samples(sess, track.more_link)
         for sample in samples:
             (sampled_artist_id,) = (
                 db.execute(

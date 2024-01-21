@@ -13,14 +13,20 @@ WS_DOMAIN = "https://www.whosampled.com"
 UA = "WhoSampledOffline/v1.0 +https://github.com/Scoder12/whosampled-offline"
 
 
+def make_request(sess: requests.Session, url: str) -> requests.Response:
+    return sess.get(url, headers={"User-Agent": UA})
+
+
 def fetch_document(sess: requests.Session, url: str) -> Tuple[str, HtmlElement]:
     print("Fetching", url)
-    r = sess.get(url, headers={"User-Agent": UA})
+    r = make_request(sess, url)
     r.raise_for_status()
     return r.url, lxml.html.fromstring(r.text)
 
 
 def assert_one(l: List[Any]) -> Any:
+    if not isinstance(l, list):
+        raise AssertionError(f"assert_one called on {type(l)}, expected list")
     assert len(l) == 1, f"Expected a single item, got {len(l)}"
     return l[0]
 
@@ -98,6 +104,7 @@ def scrape_artist_page(
     url, doc = fetch_document(sess, WS_DOMAIN + "/" + ws_id)
     artist = parse_artist(ws_id, doc)
     tracks = parse_tracks(url, doc)
+    return artist, tracks
 
     sel_next_page = CSSSelector(".pagination .next a")
     while True:
@@ -138,7 +145,7 @@ def parse_track_artists(cell: HtmlElement) -> Tuple[ArtistRef, List[ArtistRef]]:
     return artists[0], artists[1:]
 
 
-def scrape_track_page(sess: requests.Session, url: str) -> List[SampledTrack]:
+def scrape_dedi_samples_page(url: str, doc: HtmlElement) -> List[SampledTrack]:
     url, doc = fetch_document(sess, url)
     samples = []
     sel_td = CSSSelector("td")
@@ -159,3 +166,48 @@ def scrape_track_page(sess: requests.Session, url: str) -> List[SampledTrack]:
         )
         samples.append(track)
     return samples
+
+
+def find_samples_table(doc: HtmlElement) -> List[HtmlElement]:
+    sel_title = CSSSelector(".section-header-title")
+    for section in doc.cssselect("section:has(.list)"):
+        title = take_text(sel_title(section))
+        if title.startswith("Contains samples of"):
+            return section.cssselect(".list .listEntry")
+    raise AssertionError("Unable to find sample tample")
+
+
+def scrape_track_page_samples(
+    sess: requests.Session, more_link: str
+) -> List[SampledTrack]:
+    url, doc = fetch_document(sess, more_link)
+    samples = []
+    sel_track_name = CSSSelector(".trackName")
+    sel_track_artist = CSSSelector(".trackArtist")
+    year_re = re.compile(r"\((\d+)\)\s*$")
+    for sample_elt in find_samples_table(doc):
+        artist_elt = assert_one(sel_track_artist(sample_elt))
+        print(lxml.html.tostring(artist_elt))
+        artist, features = parse_track_artists(artist_elt)
+        track_name = assert_one(sel_track_name(sample_elt))
+        year_text = take_text([artist_elt])
+        year_m = year_re.search(year_text)
+        assert year_m is not None, f"Expected {year_text!r} to match re"
+        track = SampledTrack(
+            art=parse_art(url, sample_elt),
+            song=take_text([track_name]),
+            artist=artist,
+            features=features,
+            year=int(year_m.group(1)),
+            more_link=extract_url(url, track_name),
+        )
+        samples.append(track)
+    return samples
+
+
+def scrape_samples(sess: requests.Session, more_link: str) -> List[SampledTrack]:
+    r = make_request(sess, more_link.rstrip("/") + "/samples")
+    if r.status_code == 404:
+        return scrape_track_page_samples(sess, more_link)
+    r.raise_for_status()
+    return scrape_dedi_samples_page(r.url, lxml.html.fromstring(r.text))
